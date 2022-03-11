@@ -1,0 +1,737 @@
+---
+title: "t(16;21) Transcriptional Profiling"
+author: "Jenny Smith"
+date: "January 8, 2018"
+output: html_document
+---
+
+
+```{r setup}
+library(knitr)
+knitr::opts_chunk$set(tidy.opts=list(width.cutoff=50),tidy=TRUE, fig.align='center')
+knitr::opts_knit$set(root.dir = '/fh/fast/meshinchi_s/workingDir/TARGET/AML_TARGET/RNA/mRNAseq/analysis/2018.01.08_t.16.21/')
+```
+
+```{r message = FALSE, warning=FALSE}
+library(stringr)
+library(magrittr)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(tibble)
+getwd()
+```
+
+```{r}
+# source("~/scripts/RNAseq_Analysis/DifferentialExpn_PathwayAnalysis/DifferentialExpressionPipeline.r")
+```
+
+
+```{r}
+findFrequencies <- function(CDE,cols){
+  
+  Frequencies <- lapply(cols, function(x) data.frame(table(CDE[,x]), 
+                                       Variable=rep(x, nrow(table(CDE[,x]))),
+                                       stringsAsFactors = FALSE)) %>%
+    bind_rows() %>% 
+    mutate(percent=Freq/nrow(CDE)*100) %>%
+    select(Variable, Var1,percent, Freq)
+  
+  return(Frequencies)
+}
+```
+
+
+
+#Read in the Clinical Data 
+
+```{r}
+CDE.0531 <- read.csv("~/reference_mapping-files/TARGET_AML_current_asof_june30_2016_UPDATED_CLEAN_4.19.18.csv",
+                     stringsAsFactors = FALSE)
+
+head(CDE.0531[,1:5])
+# CDE.0531
+# dim(CDE.0531) #1000 by 89
+```
+
+
+```{r}
+CDE.1031 <- read.csv("~/reference_mapping-files/TARGET_AML_1031_CDE_cleaned_5.14.18.csv", 
+                     stringsAsFactors = FALSE)
+
+
+head(CDE.1031[,1:5])
+# dim(CDE.1031) #1,559 by 82
+```
+
+
+```{r}
+fus.0531 <- read.csv("../2017.09.15_Fusions_K.Mungall/Fusions_detectected_in_low_pass_RNA_seq.csv",
+                     stringsAsFactors = FALSE)
+head(fus.0531)
+```
+
+
+```{r}
+fus.1031 <- read.csv("../2017.09.15_Fusions_K.Mungall/Merged_Results/Filter_Fusions_in_NBM/TARGET_AML_1031_Fusions_batch123_Formatted_Filtered_1.3.18.csv",
+                    stringsAsFactors = FALSE)
+
+head(fus.1031)
+```
+
+
+```{r}
+dataAvail <- read.csv("../2017.08.18_RNAseq_TallyperPatient/TARGET_AML_0531_1031_SeqDataAvailability_1.02.17.csv",
+                      stringsAsFactors = FALSE)
+
+dim(dataAvail)
+```
+
+
+Dear Jenny and Rhonda,
+
+It’s a bit late, but happy new year (also to you, Soheil)! Soheil told me you could help me with two of my/our projects. You also received his e-mail, so I guess you know something about it, however, I’ll explain both projects shortly.
+
+The first is t(16;21). It’s an international retrospective analysis of pediatric patients with t(16;21) rearranged AML. There are two different fusions resulting from t(16;21) translocations: t(16;21)(p11;q22) resulting in FUS-ERG and t(16;21)(q24;q22) resulting in RUNX1-CBFA2T3. It would be a great addition if we could add some expression data of these two fusions. Could you please let me know how many patients with either FUS-ERG or RUNX1-CBFA2T3 are in your cohort? And would it be possible to do (un)supervised clustering analysis. The manuscript of this paper is ready to go, so it would be very nice to have this data as soon as possible.
+
+The other project is a small cohort study of NUP98-KDM5A, which is a collaboration between our two groups. We’ve already got 31 patients in our cohort, but Soheil told us that you might have some additional patients. Also for this cohort, we would like to get additional information about gene expression.
+
+
+#Tally the Number of t(16;21)'s 
+ 
+```{r}
+table(CDE.0531$FUS.ERG)
+```
+
+```{r}
+table(CDE.0531$RUNX1.CBFA2T3)
+```
+
+
+```{r warning=FALSE}
+# CDE.0531.Fus <- CDE.0531 %>%
+#   # left_join(., fus.0531, by=c("TARGET.USI.1"="USI")) %>% #too many duplicates 
+#   mutate(t.16.21=ifelse(grepl("[t]{0,1}\\(16;21.+", ISCN), "Yes", ifelse(ISCN == "Unknown", "Unknown", "No"))) %>%
+# 
+#   #Based on Cytogenetics
+#   mutate(RUNX1.CBFA2T3=ifelse(grepl("[t]{0,1}\\(16;21.+\\([q]{0,1}24;.+", ISCN), "Yes",ifelse(ISCN == "Unknown", "Unknown", "No")),
+#          FUS.ERG=ifelse(grepl("[t]{0,1}\\(16;21.+\\(p11.+", ISCN), "Yes",ifelse(ISCN == "Unknown", "Unknown", "No"))) %>%
+# 
+#   #Based on RNAseq, WGS
+#   mutate(RUNX1.CBFA2T3=ifelse(grepl("RUNX1-CBFA2T3", Known.Fusion.detected.by.any.method),"Yes",RUNX1.CBFA2T3),
+#          FUS.ERG=ifelse(grepl("FUS-ERG", Known.Fusion.detected.by.any.method), "Yes", FUS.ERG)) %>%
+#   
+#   select(-t.16.21) #remove bc confusing w/ RNAseq data. based only on karyotype
+#   
+
+# write.csv(CDE.0531.Fus,"~/reference_mapping-files/TARGET_AML_current_asof_june30_2016_UPDATED_CLEAN_1.09.18.csv" )
+# CDE.0531[order(CDE.0531$RUNX1.CBFA2T3, decreasing = TRUE), c("ISCN","Known.Fusion.detected.by.any.method", "t.16.21","RUNX1.CBFA2T3","FUS.ERG")]
+```
+
+```{r}
+# table(CDE.0531.Fus$RUNX1.CBFA2T3)
+# table(CDE.0531.Fus$FUS.ERG)
+```
+
+There are 4 RUNX1-CBFA2T3
+there are 6 FUS-ERG
+
+
+These two are only Relapse Samples (no matched diagnostic? Cannot find in target data matrix)
+PASINN	
+PASCRZ	
+
+We have transcript, gene, and exon level RNAseq for 8 of the t(16;21)'s
+
+
+
+```{r warning=FALSE}
+# CDE.1031.Fus <- CDE.1031 %>%
+#   
+#   left_join(., fus.1031, by="USI") %>%
+#   
+#   #change blanks to denote that they were screened. 
+#   mutate(FusionName=ifelse(FusionName == "", "NoneDetected", FusionName)) %>%
+#   
+#   #Identified through Karyotype
+#   mutate(t.16.21=ifelse(grepl("[t]{0,1}\\(16;21.+",Karyotype),"Yes", ifelse(grepl("Not available|No |Unknown", Karyotype), "Unknown", "No")),
+#          RUNX1.CBFA2T3=ifelse(grepl("[t]{0,1}\\(16;21.+\\([q]{0,1}24.+",Karyotype),"Yes", ifelse(grepl("Not available|No |Unknown", Karyotype), "Unknown", "No")),
+#          FUS.ERG=ifelse(grepl("[t]{0,1}\\(16;21.+\\([p]{0,1}11.+",Karyotype),"Yes", ifelse(grepl("Not available|No |Unknown", Karyotype), "Unknown", "No"))) %>%
+# 
+#   #Identified through RNAseq
+#   mutate(RUNX1.CBFA2T3=ifelse(grepl("RUNX1-CBFA2T3", FusionName), "Yes", RUNX1.CBFA2T3),
+#          FUS.ERG=ifelse(grepl("FUS-ERG", FusionName), "Yes", FUS.ERG),
+#          NUP98.KDM5A=ifelse(grepl("NUP98-KDM5A", FusionName), "Yes", ifelse(is.na(FusionName), "Unknown", "No"))) %>%
+# 
+#   mutate(Abnormal.Karyotype=ifelse(grepl("Normal", Cytogenetic.test.result.), "Normal",
+#                                          ifelse(grepl("Abnormal", Cytogenetic.test.result.), "Abnormal", "Unknown"))) %>%
+#   filter(!is.na(USI)) %>%
+#   set_rownames(.$USI) %>%
+#   select(-t.16.21) #remove bc only based on cytogenetics, so confusing when adding in RNAseq
+#   
+#   
+#  
+# # write.csv(CDE.1031.Fus, "~/reference_mapping-files/TARGET_AML_1031_CDE_cleaned_1.09.2018.csv")
+# # dim(CDE.1031) #1178 by 91
+# head(CDE.1031.Fus[,80:91])
+```
+
+```{r}
+# CDE.0531 <- CDE.0531.Fus
+# CDE.1031 <- CDE.1031.Fus
+# 
+# rm(CDE.0531.Fus, CDE.1031.Fus)
+```
+
+
+```{r}
+table(CDE.1031$Abnormal.Karyotype)
+table(CDE.1031$RUNX1.CBFA2T3)
+table(CDE.1031$FUS.ERG)
+```
+
+There are 5 RUNX1-CBFA2T3, but one has no TARGET barcode
+There are 6 FUS-ERG
+
+#Check on the Status of the FUS-ERG and RUNX1-CBFA2T3 from old CDEs to new. 
+
+This check is before publication adn for Todd and Rob to address reviewer concerns. 
+They are all eligable for analysis. 
+
+```{r}
+# save(DEGs, file="TARGET_AML_1031_FUS.ERG_and_RUNX1.CBFA2T3_vs_OtherAML_DEGs_list.RData")
+load("TARGET_AML_1031_FUS.ERG_and_RUNX1.CBFA2T3_vs_OtherAML_DEGs_list.RData")
+```
+
+
+```{r}
+official <- read.csv("~/reference_mapping-files/TARGET_AML_1031_CDE_cleaned_6.15.2018.csv", 
+                     stringsAsFactors = FALSE)
+```
+
+
+```{r}
+forTodd <- select(CDE.1031, USI, Patient.ID, RUNX1.CBFA2T3, FUS.ERG, Karyotype, ScreenedForFusion) %>%
+  filter(USI %in% names(DEGs$FUS.ERG$phenovector)) %>%
+  # filter(RUNX1.CBFA2T3 == "Yes" | FUS.ERG == "Yes") %>%
+  filter(ScreenedForFusion == "Yes") %>%
+  arrange(desc(RUNX1.CBFA2T3),desc(FUS.ERG))  %>% 
+  mutate(Is.Eligable=ifelse(USI %in% official$USI, "Yes", "No"))  %>%
+  # filter(Karyotype == "Not available") #unkowns without the karyotype were excluded, hence 1,017 versus 1,038. 
+  select(Patient.ID, RUNX1.CBFA2T3, FUS.ERG)
+
+# dim(forTodd)
+```
+
+
+```{r}
+write.csv(forTodd, "TARGET_AML_1031_RUNX1.CBFA2T3_FUS.ERG_List_6.19.18.csv")
+```
+
+
+```{r message=FALSE}
+library(compareGroups)
+```
+
+- Median age and range
+- Number of patients over 18 years of age
+- Distribution of the cytogenetic subgroups (t(8;21), inv(16), KMT2A, normal karyotype and others)
+
+
+```{r}
+dat.1031 <- CDE.1031 %>%
+  filter(USI %in% names(DEGs$FUS.ERG$phenovector)) %>%
+  arrange(desc(RUNX1.CBFA2T3),desc(FUS.ERG))  %>% 
+  select(Patient.ID, RUNX1.CBFA2T3, FUS.ERG, Age.Yrs,Primary.Cytogenetic.Code)
+```
+
+
+#Examine the Data Types Available
+
+```{r}
+# t.16.21_data <- dataAvail %>%
+#   left_join(., CDE.0531[c("TARGET.USI.1", "RUNX1.CBFA2T3","FUS.ERG", "Reg.")], by=c("USI"="TARGET.USI.1")) %>%
+#   left_join(.,CDE.1031[,c("USI", "RUNX1.CBFA2T3","FUS.ERG","Patient.ID")], by="USI") %>%
+#   
+#   mutate(RUNX1.CBFA2T3=gsub("NA","", paste0(RUNX1.CBFA2T3.x, RUNX1.CBFA2T3.y)),
+#          FUS.ERG=gsub("NA", "", paste0(FUS.ERG.x, FUS.ERG.y)),
+#          Reg.=gsub("NA", "",paste0(Reg., Patient.ID))) %>%
+# 
+#   filter(RUNX1.CBFA2T3 == "Yes" | FUS.ERG == "Yes" ) %>%
+#   filter(mRNAseq.DataAvailable==1) %>%
+#   
+#   arrange(RUNX1.CBFA2T3) %>%
+#   select(USI=USI, Reg.,RUNX1.CBFA2T3, FUS.ERG,Protocol, mRNAseq.DataAvailable, miRNAseq.DataAvailable, which(grepl("mRNA", colnames(.))))
+#   
+# t.16.21_data
+```
+
+
+```{r}
+# write.csv(select(t.16.21_data,Reg.,RUNX1.CBFA2T3,FUS.ERG,Protocol), "t.16.21_1031_0531_PatientRegs.csv", row.names = FALSE)
+```
+
+
+```{r}
+table(t.16.21_data$RUNX1.CBFA2T3, t.16.21_data$HighDepth_RNASeq.mRNAseq, t.16.21_data$Protocol)
+table(t.16.21_data$RUNX1.CBFA2T3, t.16.21_data$LowDepth_RNASeq.mRNAseq)
+```
+
+There are 4 RUNX1-CBFA2T3 with 1031 sequencing data (high depth, all 1031)
+There are 2 RUNX1-CBFA2T3 with 0531 low depth seq data
+
+
+```{r}
+table(t.16.21_data$FUS.ERG,t.16.21_data$HighDepth_RNASeq.mRNAseq, t.16.21_data$Protocol)
+table(t.16.21_data$FUS.ERG, t.16.21_data$LowDepth_RNASeq.mRNAseq)
+```
+
+There are 8 FUS-ERG with high depth seq, of which 5 are from 1031 dataset and 3 are high depth 0531 dataset. These 3 are ONLY relapse. 
+
+ONLY RELAPSE SAMPLES (from HD 0531):
+PASCRZ		
+PASINN		
+PASXNR
+
+There are 4 FUS-ERG with 0531 low depth seq data
+
+
+*The plan*:
+
+1) DE on RUNX1-CBFA2T3 (N=4) in HD 1031 dataset vs other AMLs
+2) DE on on RUNX1-CBFA2T3 (N=4) vs FUS.ERG (N=5) in HD 1031 dataset 
+3) DE on FUS.ERG (N=5) HD 1031 vs other AMLS
+4) DE on FUS.ERG (N=4) in LD 494 0531 seq data vs other AMLs 
+5) DE on FUS.ERG dx (N=5) 1031 vs FUS.ERG rl (N=3) from HD 0531 (?) 
+
+#Read in the Expression Data
+
+```{r}
+cts.0531 <- read.csv("~/RNA_seq_Analysis/0000.00.03_Expression_Matrices/TARGET_AML_AAML0531_dupGenesRemoved_fractionalCounts.csv",
+                     stringsAsFactors = FALSE, row.names = 1)
+
+head(cts.0531[,1:5])
+```
+
+
+```{r}
+cts.1031 <- read.csv("~/RNA_seq_Analysis/0000.00.03_Expression_Matrices/TARGET_AML_AAML1031_dupGenesRemoved_FractionalCounts.csv", 
+                     stringsAsFactors = FALSE, row.names = 1)
+
+colnames(cts.1031) <- str_split_fixed(colnames(cts.1031), "\\.", n=2)[,1]
+head(cts.1031[,1:5])
+```
+
+
+
+
+#Look at clustering for all AML samples 
+
+```{r}
+source("~/scripts/RNAseq_Analysis/DifferentialExpn_PathwayAnalysis/Heatmaps_Function.r")
+source("~/scripts/RNAseq_Analysis/DifferentialExpn_PathwayAnalysis/clusterAnalysis_Function.r")
+```
+
+
+```{r}
+cols <- c("FUS.ERG","RUNX1.CBFA2T3")
+group.IDs <- lapply(cols, GroupIDs, clinData=CDE.1031)
+names(group.IDs) <- cols
+# str(group.IDs)
+```
+
+```{r}
+phenos.1031 <- lapply(group.IDs, phenoVectors_MultipleGroups)
+str(phenos.1031)
+```
+
+```{r message=FALSE, fig.height=10, fig.width=10}
+pca.1031 <- lapply(phenos.1031,PCA, expnData=cts.1031, round=TRUE)
+
+pca.1031$FUS.ERG$pca_plot
+pca.1031$RUNX1.CBFA2T3$pca_plot
+```
+
+
+#Perform Differential Expression 
+
+```{r}
+source("~/scripts/RNAseq_Analysis/DifferentialExpn_PathwayAnalysis/DifferentialExpressionPipeline.r")
+```
+
+
+```{r}
+cols <- c("FUS.ERG", "RUNX1.CBFA2T3")
+```
+
+```{r message=FALSE, fig.height=10, fig.width=10}
+DEGs <- lapply(cols,twoGroups_DEGs, expnData=cts.1031, clinData=CDE.1031,ref="No")
+
+names(DEGs) <- cols
+```
+
+
+```{r}
+# save(DEGs, file="TARGET_AML_1031_FUS.ERG_and_RUNX1.CBFA2T3_vs_OtherAML_DEGs_list.RData")
+load("TARGET_AML_1031_FUS.ERG_and_RUNX1.CBFA2T3_vs_OtherAML_DEGs_list.RData")
+```
+
+
+```{r}
+table(DEGs$FUS.ERG$phenovector)
+table(DEGs$RUNX1.CBFA2T3$phenovector)
+```
+
+```{r}
+# DEGs$FUS.ERG$DE$design #check that the groups were set up correctly. A surprising amount of DEGs for such a small group. 
+```
+
+```{r}
+DEGs.ERG <- extract_DEGs(DEGs$FUS.ERG)
+# dim(DEGs.ERG) #1,314 DEGs
+head(DEGs.ERG)
+# write.csv(DEGs.ERG,"TARGET_AML_1031_FUS.ERG_vs_OtherAML_DEGs.csv")
+```
+
+```{r}
+DEGs.RUNX1 <- extract_DEGs(DEGs$RUNX1.CBFA2T3)
+
+DEGs.RUNX1 #119 DEGs
+# write.csv(DEGs.RUNX1, "TARGET_AML_1031_RUNX1.CBFA2T3_vs_OtherAML_DEGs.csv")
+# getwd()
+```
+
+
+#Differential Expression removing t(8;21)
+
+```{r}
+
+#Code added after email with Sanne for RUNX1-CBFA2T3
+CDE.1031.sub <- CDE.1031 %>%
+  filter(t.8.21_Cleaned != "Positive") %>%
+  column_to_rownames("USI")
+
+dim(CDE.1031.sub)
+# head(CDE.1031.sub[,1:5])
+```
+
+```{r}
+# tiff("TARGET_AML_1031_RUNX1.CBFA2T3_vs_otherAMLs_rmt.8.21_Heatmap.tiff", height = 10, width = 10, units="in", res=600)
+DEGs_Rm_t.8.21 <- twoGroups_DEGs(expnData = cts.1031, clinData = CDE.1031.sub, col="RUNX1.CBFA2T3", ref = "No", logCPM = TRUE)
+# dev.off()
+```
+
+```{r}
+DEGs_Rm_t.8.21.df <-  extract_DEGs(DEGs_Rm_t.8.21)
+head(DEGs_Rm_t.8.21.df)
+# write.csv(DEGs_Rm_t.8.21.df, "RUNX1.CBFA2T3_vs_OtherAML_removed.t.8.21s_DEGs.csv", row.names = FALSE)
+# getwd()
+```
+
+```{r}
+sum(table(DEGs_Rm_t.8.21$phenovector))
+```
+
+
+
+
+#Color Dendrograms 
+
+```{r fig.width=16, fig.height=5}
+# tiff("FUS.ERG_allDEGs_HierarchicalCluster.tiff", width = 16, height = 5, units = "in", res=600)
+colorDends(hclustObject = DEGs$FUS.ERG$dends_DE$c1,colorCodes = c("GroupA"="red","GroupB"="navy"), group = DEGs$FUS.ERG$phenovector,textsize = c(0.2,5))
+# dev.off()
+```
+
+
+```{r fig.width=16, fig.height=5}
+RUNX1.RUNX1T1 <- CDE.1031$t.8.21_Cleaned %>% set_names(CDE.1031$USI) %>% subset(., . == "Positive") 
+pheno.RUNX1 <- DEGs$RUNX1.CBFA2T3$phenovector
+pheno.RUNX1[which(names(pheno.RUNX1) %in%  names(RUNX1.RUNX1T1))] <- "GroupC"
+
+# tiff("RUNX1.CBFA2T3_allDEGs_HierarchicalCluster.tiff", width = 16, height = 5, units = "in", res=600)
+colorDends(hclustObject = DEGs$RUNX1.CBFA2T3$dends_DE$c1, colorCodes = c("GroupA"="green3","GroupB"="navy", "GroupC"="mediumvioletred"), group = pheno.RUNX1, textsize = c(0.2,5))
+# dev.off()
+```
+
+
+```{r}
+table(pheno.RUNX1)
+```
+
+
+#Look at PCA of only t(16;21)
+
+```{r}
+onlyT.16.21 <- CDE.1031 %>%
+  filter(FUS.ERG == "Yes" | RUNX1.CBFA2T3 == "Yes") %>%
+  mutate(t.16.21=ifelse(FUS.ERG == "Yes", "FUS.ERG", ifelse(RUNX1.CBFA2T3 == "Yes", "RUNX1.CBFA2T3", "No")))
+
+dim(onlyT.16.21)
+table(onlyT.16.21$t.16.21)
+```
+
+
+```{r}
+pheno.1031.t16.21 <- onlyT.16.21$t.16.21 %>%
+  set_names(onlyT.16.21$USI)
+pheno.1031.t16.21
+```
+
+
+```{r message=FALSE}
+pca.t.16.21 <- PCA(expnData = cts.1031,phenovector = pheno.1031.t16.21, round = TRUE)
+
+
+
+p <- pca.t.16.21$pca_plot 
+```
+
+```{r}
+# tiff("RUNX1.CBFA2T3_FUS.ERG_PCAplot.tiff", width = 6, height = 4, units = "in", res=600)
+# par(mar=c(0,0,0,0))
+p <- p + scale_color_manual(values = c("FUS.ERG"="red", "RUNX1.CBFA2T3"="green3")) +
+  theme(plot.margin = margin(0,0,0,0,"mm"))
+
+
+ggsave("RUNX1.CBFA2T3_FUS.ERG_PCAplot.tiff", p,device = "tiff", width = 6, height = 6, units="in", dpi=1000)
+# dev.off()
+```
+
+
+
+#Examine RUNX1.CBFA2T3 and RUNX1-RUNX1T1
+
+```{r}
+pheno.CBF.T1 <- ifelse(CDE.1031$RUNX1.CBFA2T3 == "Yes", "RUNX1.CBFA2T3", 
+                       ifelse(CDE.1031$t.8.21_Cleaned == "Positive", "RUNX1.RUNX1T1", "OtherAML")) %>%
+  set_names(CDE.1031$USI)
+
+
+table(pheno.CBF.T1)
+```
+
+```{r }
+pca.CBF.T1 <- PCA(expnData = cts.1031, phenovector = pheno.CBF.T1, round = TRUE)
+
+```
+
+```{r message=FALSE, fig.height=12, fig.width=12}
+pca.CBF.T1$pca_plot + 
+  scale_color_manual(values = c("RUNX1.CBFA2T3"="green2", 
+                                "RUNX1.RUNX1T1"="mediumvioletred", 
+                                "OtherAML"="navy"))
+```
+
+
+
+#Examine a subset of the AML cohort
+
+```{r}
+set.seed(2)
+
+USIs <- CDE.1031$USI[! CDE.1031$USI %in% names(pheno.1031.t16.21)]
+idx <- sample(USIs, 290) 
+
+CDE.1031.sub <- CDE.1031[idx,] %>%
+  bind_rows(.,CDE.1031[names(pheno.1031.t16.21),])
+
+CDE.1031.sub <- droplevels(CDE.1031.sub)
+```
+
+
+```{r}
+cols <- c("NPM1", "CEBPA", "t.8.21_Cleaned","MLL_Cleaned","inv.16_Cleaned","FLT3.ITD", "Abnormal.Karyotype")
+```
+
+```{r warning=FALSE}
+all1031 <- findFrequencies(CDE = CDE.1031,
+                           cols = cols)
+```
+
+```{r warning=FALSE}
+sub1031 <- findFrequencies(CDE=CDE.1031.sub,
+                           cols=cols) %>%
+  bind_cols(., all1031[, 3:4])
+
+sub1031
+```
+
+```{r}
+# write.csv(sub1031, "T.16.21_Subset_CytogeneticFrequenciesCheck_.csv")
+```
+
+
+```{r}
+# ifelse(CDE.1031.sub$FUS.ERG == "Yes", "FUS.ERG", 
+#                     ifelse(CDE.1031.sub$RUNX1.CBFA2T3 == "Yes", "RUNX1.CBFA2T3",
+#                            ifelse(CDE.1031.sub$USI %in% names(RUNX1.RUNX1T1), 
+#                                   "RUNX1.RUNX1T1", "OtherAML")))
+
+pheno.sub <- ifelse(CDE.1031.sub$FUS.ERG == "Yes", "FUS.ERG", 
+                    ifelse(CDE.1031.sub$RUNX1.CBFA2T3 == "Yes", "RUNX1.CBFA2T3","OtherAML")) %>%
+  set_names(CDE.1031.sub$USI)
+
+table(pheno.sub)
+```
+
+```{r message=FALSE}
+pca.sub <- PCA(expnData = cts.1031, phenovector = pheno.sub,round = TRUE)
+```
+
+
+
+```{r}
+table(pca.sub$pca_data$group)
+```
+
+```{r}
+# tiff("RUNX1.CBFA2T3_FUS.ERG_OtherAML_subset300Patients_PCAplot.tiff", height = 7, width = 7, units="in", res=600)
+p.sub <- pca.sub$pca_plot + 
+  scale_color_manual(values = c("FUS.ERG"="red1",
+                                "RUNX1.CBFA2T3"="green2",
+                                "RUNX1.RUNX1T1"="magenta",
+                                 "OtherAML"="navy"))
+
+
+# ggsave("RUNX1.CBFA2T3_FUS.ERG_OtherAML_subset300Patients_PCAplot.tiff", p.sub,device = "tiff", width = 6, height = 6, units="in", dpi=1000)
+# dev.off()
+```
+
+
+
+
+#Correlation Plot with the DEGs 
+
+```{r}
+source("~/scripts/RNAseq_Analysis/DifferentialExpn_PathwayAnalysis/corrplot_Function.r")
+```
+
+
+```{r}
+DEGs.union <- DEGs.ERG %>%
+  full_join(.,  DEGs.RUNX1, by="gene")
+
+dim(DEGs.union)
+DEGs.union
+```
+
+
+```{r}
+cor.CDE <- CDE.1031 %>%
+  select(USI,MLL_Cleaned,t.8.21_Cleaned, inv.16_Cleaned, Abnormal.Karyotype, FUS.ERG, RUNX1.CBFA2T3) %>%
+  filter(USI %in% c(names(DEGs$FUS.ERG$phenovector), names(DEGs$RUNX1.CBFA2T3$phenovector))) %>%
+  mutate(Status=ifelse(FUS.ERG == "Yes", "FUS.ERG",
+                       ifelse(RUNX1.CBFA2T3 == "Yes", "RUNX1.CBFA2T3",
+                              ifelse(MLL_Cleaned == "Positive", "KMT2A", 
+                                     ifelse(t.8.21_Cleaned == "Positive", "t.8.21",
+                                            ifelse(inv.16_Cleaned == "Positive", "inv.16",
+                                                   ifelse(Abnormal.Karyotype == "Normal", "NK", "OtherAML"))))))) %>%
+  mutate(Status=factor(Status),
+         t.16.21=ifelse(FUS.ERG == "Yes", "FUS.ERG",
+                       ifelse(RUNX1.CBFA2T3 == "Yes", "RUNX1.CBFA2T3", "OtherAML"))) %>%
+  mutate(Num.Status=as.numeric(Status) + 1, 
+         Num.t.16.21=as.numeric(gsub("3|4|5|8", 6, Num.Status))) %>%
+  select(USI,Status,t.16.21,Num.Status,Num.t.16.21, everything()) 
+
+
+cor.CDE
+```
+
+```{r}
+table(cor.CDE$Status, cor.CDE$Num.Status)
+
+# write.csv(table(cor.CDE$Status, cor.CDE$Num.Status), "T.16.21_GroupsForColorbar.csv")
+```
+FUS.ERG == Red
+otherAML == "orange"
+RUNX1.CBFA2T3 == yellow
+```{r}
+tiff("groupColors_barplot.tiff", height = 2, width=2, units="in",res=600)
+barplot(rep(1, 7), col=brewer.pal(7, "Set1"))
+dev.off()
+# getwd()
+```
+
+
+
+```{r}
+CPM <- DEGs$FUS.ERG$DE$dge
+
+cor.analysis <- corPlot_withColorBar(expnData = CPM[DEGs.union$gene,],
+                                     CDE=cor.CDE, 
+                                     col2 = "Num.t.16.21")
+```
+
+```{r}
+cormat.melt <- cor.analysis$cormat.melt
+```
+
+
+```{r fig.height=16}
+ggheatmap <- ggplot(cormat.melt, aes(Num.USI, Num.pair, fill = value))+
+    geom_raster() +
+    scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, limit = c(-1,1), space = "Lab",   name="Pearson\nCorrelation") +
+    theme_minimal() + # minimal theme
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, size = 0.0, hjust = 1),
+          axis.text.y = element_text(angle = 45, vjust = 1, size = 0.0, hjust = 1),
+          # axis.title.x = element_blank(),
+          # axis.title.y = element_blank(),
+          panel.grid.major = element_blank(),
+          panel.border = element_blank(),
+          panel.background = element_blank(),
+          panel.grid = element_blank(),
+          axis.ticks = element_blank()) +
+    labs(x="AML Samples", y="AML Samples") +
+    coord_fixed()
+  
+  heatmap2 <-  ggheatmap +
+    geom_jitter(data = subset(cormat.melt, Num.USI==Num.pair),
+                mapping = aes(x=Num.USI-15, y=Num.pair, color=Num.Status), size=15, shape=95) +
+    labs(x="AML Samples", y="AML Samples") #shape 124 is a line or pipe shape, 95 is a dash
+
+  if (!is.null(col2)){
+    heatmap2 <- heatmap2 +
+      geom_jitter(data = subset(cormat.melt, Num.USI==Num.pair),
+                  mapping = aes(x=Num.USI-50, y=Num.pair, color=Num.t.16.21), size=15, shape=95) +
+      labs(x="AML Samples", y="AML Samples")
+
+  }
+
+  n <- length(unique(cormat.melt$Status))
+
+  heatmap2 <- heatmap2 +
+      scale_color_gradientn(colors = brewer.pal(n, "Set1"))  +
+      scale_x_reverse() +
+      labs(x="AML Samples", y="AML Samples") +
+      theme(axis.title  = element_text(size=40),
+            axis.text.x = element_blank(),
+            axis.text.y = element_blank(),
+            legend.key.size = unit(50, units = "points"),
+            legend.text = element_text(size=25),
+            legend.title = element_text(size=30))
+
+# ggheatmap
+heatmap2
+```
+
+
+
+
+```{r fig.width=15.5, fig.height=15.5}
+# tiff("t.16.21_vs_otherAML_DEGs_corrplot.tiff", height = 15.5, width=15.5, units="in",res=1200)
+cor.analysis$heatmap2 + labs(x="AML Samples", y="AML Samples")
+# dev.off()
+```
+
+
+
+#Session Information
+
+```{r}
+sessionInfo()
+
+```
+
+
+
